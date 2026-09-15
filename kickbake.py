@@ -41,7 +41,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - reported by doctor
     tomllib = None
 
-__version__ = "0.9.0-beta.1"
+__version__ = "0.9.0-rc.1"
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_CONFIG = ROOT / "config" / "kickbake.toml"
