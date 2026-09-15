@@ -1,0 +1,12 @@
+# Build container for kickbake — runs ONLY inside Podman, never installed
+# on the host. Provides the Fedora-native ISO toolchain:
+#   mkksiso (lorax), ksvalidator (pykickstart), xorriso.
+#
+# Build (done automatically by `python3 kickbake.py doctor` if missing):
+#   podman build -t kickbake-builder:latest podman/
+FROM registry.fedoraproject.org/fedora:44
+
+RUN dnf -y install lorax pykickstart xorriso isomd5sum dosfstools mtools \
+    && dnf clean all
+
+WORKDIR /work

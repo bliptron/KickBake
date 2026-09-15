@@ -1,0 +1,65 @@
+# KickBake build configuration.
+# Paths are relative to the repository root.
+
+[fedora]
+release = 44
+# Official Fedora container used to build the local toolchain image.
+container_image = "registry.fedoraproject.org/fedora:44"
+# Local image built from podman/Containerfile (host stays clean of Fedora packages).
+builder_image = "kickbake-builder:latest"
+
+[iso]
+# Source ISO to embed the kickstart into.
+# Milestone 2: Everything netinst (installer vehicle) + embedded offline repo.
+source = "assets/Fedora-Everything-netinst-x86_64-44-1.7.iso"
+# Official SHA-256 from Fedora's CHECKSUM file for the source image above.
+# `python3 kickbake.py verify-iso` computes and compares; `build` refuses to
+# run until this is pinned and matches.
+# Source: Fedora-Everything-44-1.7-x86_64-CHECKSUM (Fedora-Everything-netinst-x86_64-44-1.7.iso)
+expected_sha256 = "bd285201494dd0ba09b54d05ac707de1401668b8512a573edb5922dcf9d7067e"
+
+[kickstart]
+# Entry file of the include tree that gets flattened. The generated flat
+# kickstart lands beside the ISO in output/ with the same dated basename
+# (also usable as an OEMDRV ks.cfg).
+entry = "kickstart/kickbake.ks"
+
+[build]
+# Offline repository (cache/repo: Packages/ + repodata/, built once with
+# dnf --downloadonly @^kde-desktop; see README). Grafted into the ISO as
+# /repo and referenced by inst.repo=hd:LABEL=<volid>:/repo on the kernel
+# cmdline. `build` refuses to run without repo/.done.
+repo_dir = "cache/repo"
+# Packages the closure must carry that groups no longer provide:
+# - kernel: F41+ removed it from comps; Anaconda injects the spec itself.
+# - bootloader: Anaconda installs grub2/shim/efibootmgr FROM THE PAYLOAD
+#   repo (logs/4: "No match for argument: grub2-efi-x64 ...").
+# - nvme-cli: required when the target disk is NVMe.
+# - open-vm-tools: requested under VMware detection (harmless in repo;
+#   bare metal never asks for it).
+# - initial-setup(-gui): firstboot --enable needs it IN THE PAYLOAD or no
+#   user is ever created (root is locked) -- machine would be unloginnable.
+repo_extra_packages = "kernel grub2-efi-x64 shim-x64 efibootmgr grub2-tools-extra grub2-pc nvme-cli open-vm-tools initial-setup initial-setup-gui"
+# dnf environment/groups whose closure fills the offline repo: the exact
+# Fedora KDE Plasma Workspaces environment plus its member groups,
+# mirroring the %packages list in kickstart/kickbake.ks 1:1 (Anaconda also
+# always adds @core). The repo self-verification resolves this exact spec
+# against the repo alone, so a missing member can never reach a VM again.
+repo_groups = "kde-desktop-environment core admin-tools desktop-accessibility kde-apps kde-desktop kde-media kde-pim libreoffice"
+
+# Version marker appended to GRUB menu titles, e.g.
+# "Install Fedora 44 (KickBake 44-1)". Bump per build iteration so cached
+# VM transfers / old sticks are instantly recognizable at the boot menu.
+# Its number is also the leading counter of the output filename
+# (12-kickbake-fedora-plasma-44.1.7.iso).
+menu_version = "44-38"
+
+# mkksiso's own ESP rebuild (mkefiboot) needs loop devices, which rootless
+# podman cannot provide. Keep it skipped: podman/compose-offline.sh then
+# rebuilds the embedded ESP rootlessly (mkfs.vfat -C + mcopy + xorriso
+# append_partition) so UEFI boots also see inst.ks/inst.repo.
+skip_mkefiboot = true
+
+[output]
+dir = "output"
+name = "kickbake-fedora-plasma"

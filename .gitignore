@@ -1,0 +1,14 @@
+# Generated artifacts
+output/
+cache/
+
+# Source ISOs are large assets, kept out of git
+assets/*.iso
+
+# Python
+__pycache__/
+*.pyc
+
+# Internal working documents (never published)
+plans/
+logs/
