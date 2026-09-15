@@ -224,6 +224,10 @@ the host + pool layout on the disks you confirmed with `erase`.
 
 ---
 
+## AI assistance
+
+KickBake was designed, directed, tested and maintained by the project author, with substantial assistance from AI tools during development. ChatGPT and GLM-5.3 Flash were used for code generation, debugging, review, documentation and technical discussion. All generated work was reviewed, tested and accepted by the maintainer, who takes responsibility for the resulting project.
+
 ## License
 
 [MIT](LICENSE) © 2026 KickBake contributors. The installed media contains
