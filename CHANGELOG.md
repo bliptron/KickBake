@@ -16,7 +16,7 @@ Changes on the road to 1.0.0, since `0.9.0-rc.1`.
   dotfiles, SSH keys. KickBake owns birth; Ansible owns everything after.
 - **KickBake theme in the ISO.** A visual theme for the installed desktop,
   developed and soak-tested on a Fedora VM, bundled into the media so
-  machines are born wearing it.
+  machines have the option to wear it.
 
 ### Fixed
 
