@@ -61,6 +61,19 @@ grep -q '^GRUB_DISABLE_SUBMENU=' /etc/default/grub \
 rm -f /boot/loader/entries/*0-rescue*.conf
 grub2-mkconfig -o /boot/grub2/grub.cfg
 [ -d /boot/efi/EFI/fedora ] && grub2-mkconfig -o /boot/efi/EFI/fedora/grub.cfg
+# Persistent data filesystem (/data): a fresh subvolume root is always
+# root:root 755, which locks out every non-root user. Hand it to the
+# first-boot admin -- UID/GID 1000, no user exists yet; Fedora's initial
+# setup creates the admin with exactly that identity.
+chown 1000:1000 /data
+chmod 755 /data
+# Give /data a real SELinux label instead of the default_t fallback.
+# Conditional: the policy tooling may be absent from the payload, and the
+# unconfined admin is not blocked by default_t either way.
+if command -v semanage >/dev/null 2>&1; then
+    semanage fcontext -a -t var_t "/data(/.*)?" 2>/dev/null || true
+    restorecon -RvF /data
+fi
 # Space reclamation in VMs: weekly TRIM as the deterministic safety net.
 # btrfs defaults to discard=async on kernels 6.2+, so the fragment stays
 # plain: pykickstart treats extra btrfs tokens as EXTRA DEVICES, which

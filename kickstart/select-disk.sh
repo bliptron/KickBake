@@ -7,7 +7,7 @@
 # Flow (plans/MENUS.md):
 #   single disk -> "this disk will be used for host + data" confirmation
 #   multi disk  -> pick the host disk; every other eligible disk joins the
-#                  pool pool (one Btrfs filesystem spanning those disks)
+#                  data data (one Btrfs filesystem spanning those disks)
 #   then        -> unified layout readout -> typed 'erase' confirmation ->
 #                  write /tmp/kickbake-storage.ks -> anaconda continues
 #                  unattended.
@@ -179,10 +179,10 @@ DISK=${DISKS[$HOST_IDX]}
 #   R3  host >= 16 GiB -- empirically proven: the transaction peak
 #       needs ~13 GiB usable; a 16 GiB host installs, a 12 GiB one does not
 #   R5  host <= 256 GiB
-#   R2  pool = the remainder: the host disk's leftover (single disk), or
-#       every OTHER eligible disk in full (multi disk, one Btrfs pool)
+#   R2  data = the remainder: the host disk's leftover (single disk), or
+#       every OTHER eligible disk in full (multi disk, one Btrfs data)
 #   R6  multi disk: the host disk is used 100% for host -- HOST = the
-#       whole disk after EFI + /boot; the pool lives on the other disks
+#       whole disk after EFI + /boot; the data lives on the other disks
 SECTORS=$(cat "/sys/block/$DISK/size" 2>/dev/null || echo 0)
 DISK_MIB=$(( SECTORS * 512 / 1048576 ))
 
@@ -212,13 +212,13 @@ if [ "$COUNT" -eq 1 ]; then
     [ "$HOST_MIB" -gt 262144 ] && HOST_MIB=262144
 else
     # R6  multi disk: the host disk is used 100% for host -- HOST = the
-    # whole disk after EFI + /boot; the pool lives on the OTHER disks,
+    # whole disk after EFI + /boot; the data lives on the OTHER disks,
     # so rationing the host disk would strand its remainder unused.
     HOST_MIB=$(( DISK_MIB - 2048 ))
 fi
 
-# pool members: the host disk alone (single), or every OTHER eligible
-# disk in full (multi) -- one Btrfs pool spanning those member partitions.
+# data members: the host disk alone (single), or every OTHER eligible
+# disk in full (multi) -- one Btrfs data spanning those member partitions.
 DATADISKS=()
 if [ "$COUNT" -eq 1 ]; then
     DATADISKS=("$DISK")
@@ -228,7 +228,7 @@ else
     done
 fi
 
-data_mib_for() {  # pool capacity on a member disk, MiB
+data_mib_for() {  # data capacity on a member disk, MiB
     local d="$1" mib
     mib=$(( $(cat "/sys/block/$d/size" 2>/dev/null || echo 0) * 512 / 1048576 ))
     if [ "$d" = "$DISK" ]; then
@@ -282,10 +282,10 @@ done
     fi
     echo "btrfs none --label=host btrfs.host"
     echo ""
-    echo "# pool Btrfs filesystem (persistent user/project state)"
+    echo "# data Btrfs filesystem (persistent user/project state)"
     if [ "$COUNT" -eq 1 ]; then
         echo "part btrfs.data --fstype=btrfs --size=1024 --grow --ondisk=$DISK"
-        echo "btrfs none --label=pool btrfs.data"
+        echo "btrfs none --label=data btrfs.data"
     else
         MEMBERS=""
         IDX=0
@@ -294,13 +294,13 @@ done
             echo "part btrfs.data$IDX --fstype=btrfs --size=1024 --grow --ondisk=$d"
             MEMBERS="$MEMBERS btrfs.data$IDX"
         done
-        echo "btrfs none --label=pool$MEMBERS"
+        echo "btrfs none --label=data$MEMBERS"
     fi
     echo ""
     echo "# Logical layouts, LABEL-based (single source: this fragment)"
     echo "btrfs /     --subvol --name=root LABEL=host"
     echo "btrfs /home --subvol --name=home LABEL=host"
-    echo "btrfs /data --subvol --name=data LABEL=pool"
+    echo "btrfs /data --subvol --name=data LABEL=data"
 } > "$FRAG"
 
 say ""

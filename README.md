@@ -16,8 +16,8 @@ KickBake is strongly opinionated. These are features, not limitations to be fixe
 - **KDE Plasma only.** The payload uses Fedora's KDE Plasma Workspaces environment. If you want GNOME, XFCE or anything between, this is not your tool.
 - **100% offline at install time.** The ISO embeds the complete package closure (~2300 packages, comps included). No network is used or required.
 - **Fresh when you wish it to be.** The offline repo is resolved against Fedora release + updates whenever `repo` is refreshed, so a build made from a freshly refreshed repo is already patched on day one.
-- **Manual disk selection. The installer never guesses.** No automatic disk inference, no "it looked like a good target". You choose the disk from a short, informative list and type `erase` to confirm. Ambiguity of any kind powers the machine off with nothing written. On multi-disk machines, the selected disk becomes `host` and every other eligible fixed disk becomes part of `pool`; all eligible disks are erased.
-- **One storage layout: host + pool.** host (root + home) is replaceable machine state; pool is the persistent data filesystem. Single concept with a single code path.
+- **Manual disk selection. The installer never guesses.** No automatic disk inference, no "it looked like a good target". You choose the disk from a short, informative list and type `erase` to confirm. Ambiguity of any kind powers the machine off with nothing written. On multi-disk machines, the selected disk becomes `host` and every other eligible fixed disk becomes part of `data`; all eligible disks are erased.
+- **One storage layout: host + data.** host (root + home) is replaceable machine state; data is the persistent data filesystem. Single concept with a single code path.
 - **Fail always close.** Invalid input, EOF, an unexpected condition, a tiny disk, the machine powers off with nothing written. Only an explicit `erase` lets Anaconda touch a disk.
 - **No full installer UI.** KickBake asks one disk selection followed by one destructive confirmation, and answers everything else itself. Anaconda's interactive interface is never exposed.
 - **Root is locked. No user is pre-created.** Fedora's initial setup collects the admin user at first boot. Machine birth does not include accounts.
@@ -116,7 +116,7 @@ KickBake offers exactly one layout, computed from the disk you choose:
 | EFI                           | 1 GiB, fixed, generous by design, in preparation for Unified Kernel Image (UKI)                                                                                                |
 | /boot                         | 1 GiB, fixed, ext4, also generous. After UKI, /boot can optionally be merged into the EFI partition                                                                            |
 | host (root + home, Btrfs)     | ***single disk***: 25% of the disk, rounded up, snapped to a power-of-two step. Minimum 16 GiB, maximum 256 GiB. · ***multi disk***: 100% of the host disk (minus EFI + /boot) |
-| pool (persistent data, Btrfs) | ***single disk***: everything that remains · ***multi disk***: one Btrfs filesystem spanning every other eligible disk                                                         |
+| data (persistent data, Btrfs) | ***single disk***: everything that remains · ***multi disk***: one Btrfs filesystem spanning every other eligible disk                                                         |
 
 Btrfs relies on the kernel's `discard=async` default (6.2+) and the installed
 system enables `fstrim.timer`, so freed space is returned to the virtual disk
@@ -126,7 +126,7 @@ on the drive (virt-manager exposes it per disk).
 
 Worked examples:
 
-| Disk    | host    | pool    |
+| Disk    | host    | data    |
 | ------- | ------- | ------- |
 | 28 GiB  | 16 GiB  | 10 GiB  |
 | 32 GiB  | 16 GiB  | 14 GiB  |
@@ -135,9 +135,9 @@ Worked examples:
 | 512 GiB | 128 GiB | 382 GiB |
 | 1 TiB   | 256 GiB | 766 GiB |
 
-Every install gets host + pool: the chosen disk hosts `host`, and every other eligible disk joins `pool`. There is no other layout, no interactive partitioning, and no way to opt out. That is the point. (After installation the machine is yours: repartition, grow, shrink, do whatever you like. Birth is opinionated; life is yours.) The pool is a plain multi-device Btrfs filesystem. It prioritizes capacity, not data redundancy. File data is not mirrored, so failure of any member disk can affect the filesystem.
+Every install gets host + data: the chosen disk hosts `host`, and every other eligible disk joins `data`. There is no other layout, no interactive partitioning, and no way to opt out. That is the point. (After installation the machine is yours: repartition, grow, shrink, do whatever you like. Birth is opinionated; life is yours.) The data is a plain multi-device Btrfs filesystem. It prioritizes capacity, not data redundancy. File data is not mirrored, so failure of any member disk can affect the filesystem.
 
-**One filesystem, many devices.** On multi-disk machines the pool is a single Btrfs filesystem spanning every non-host disk, and file managers (Dolphin's Devices panel) list each member separately (several identical `pool` entries, one `host`, the EFI partition). Ignore those entries: everything lives in ONE place, the pool mounted at `/data`. Add `/data` to your Places (favourites) and work from there.
+**One filesystem, many devices.** On multi-disk machines the data is a single Btrfs filesystem spanning every non-host disk, and file managers (Dolphin's Devices panel) list each member separately (several identical `data` entries, one `host`, the EFI partition). Ignore those entries: everything lives in ONE place, the data mounted at `/data`. Add `/data` to your Places (favourites) and work from there.
 
 ---
 
@@ -220,7 +220,7 @@ Removing the images is safe at any time: the next `kickbake.py doctor`
 scratch (`/run/user/1000/containers`), and the in-container dnf caches of
 a repo build. And the one deliberate, permanent touch that is the
 product itself: machines installed with the media carry Fedora, GRUB and
-the host + pool layout on the disks you confirmed with `erase`.
+the host + data layout on the disks you confirmed with `erase`.
 
 ---
 
