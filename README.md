@@ -50,7 +50,9 @@ KickBake is strongly opinionated. These are features, not limitations to be fixe
 **Target machine:**
 
 - **UEFI boot only.** BIOS/CSM firmware is unsupported: the media does
-  not boot. Fails by design, not by accident.
+  not boot. Fails by design, not by accident. On virtual machines, set
+  the firmware to UEFI at creation time — switching a VM between BIOS
+  and UEFI after it has booted can leave the boot chain broken.
 - At least one fixed disk ≥ 24 GiB (see the sizing rules).
 - Any fixed-disk type works in principle. Enumeration is
   name-agnostic (NVMe, SATA, VirtIO, pvscsi, SCSI, IDE). No whitelist is applied. Proven so far: NVMe, SATA, SCSI and IDE (VMware). VirtIO/pvscsi are untested.
