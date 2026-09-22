@@ -95,12 +95,12 @@ python3 kickbake.py build     # bake the ISO
 Output:
 
 ```
-output/kickbake-fedora-plasma-44.1.7-<YY.MM.DD>.iso
-output/kickbake-fedora-plasma-44.1.7-<YY.MM.DD>.iso.sha256
-output/kickbake-fedora-plasma-44.1.7-<YY.MM.DD>.ks
+output/fedora-plasma-44.1.7-kickbake-<YY.MM.DD>.iso
+output/fedora-plasma-44.1.7-kickbake-<YY.MM.DD>.iso.sha256
+output/fedora-plasma-44.1.7-kickbake-<YY.MM.DD>.ks
 ```
 
-The filename includes today's date (`YY.MM.DD`; same-day rebuilds never overwrite since they gain `-1`, `-2`, ...). The boot menu carries the build date, showing as `KickBake 26.09.15`, so stale media is unmistakable there.
+The filename includes today's date (`YY.MM.DD`; same-day rebuilds never overwrite since they gain `-1`, `-2`, ...). The boot menu carries the build date, showing as `KickBake 26.09.22`, so stale media is unmistakable there.
 
 Then: boot the target from the ISO → the disk selection screen lists eligible disks → enter the number → read the layout → type `erase` → the install runs unattended → Fedora's initial setup creates your user at first boot → hand the machine to Ansible or just start using.
 

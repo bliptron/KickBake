@@ -112,10 +112,10 @@ class TestOutputNaming(unittest.TestCase):
             "iso": {
                 "source": "assets/Fedora-Everything-netinst-x86_64-44-1.7.iso"
             },
-            "output": {"dir": self.tmp, "name": "kickbake-fedora-plasma"},
+            "output": {"dir": self.tmp, "name": "fedora-plasma"},
         }
         iso, ks = kickbake.output_paths(cfg)
-        base = "kickbake-fedora-plasma-44.1.7-" + datetime.now().strftime(
+        base = "fedora-plasma-44.1.7-kickbake-" + datetime.now().strftime(
             "%y.%m.%d")
         self.assertEqual(iso.name, f"{base}.iso")
         self.assertEqual(ks.name, f"{base}.ks")

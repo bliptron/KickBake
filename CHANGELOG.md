@@ -47,3 +47,6 @@ Changes on the road to 1.0.0, since `0.9.0-rc.1`.
   `data`, mounted at `/data`.
 - The boot-menu layout readout gains a blank line before the first disk
   entry, for readability.
+- Output naming: `kickbake-fedora-plasma-44.1.7-<date>` becomes
+  `fedora-plasma-44.1.7-kickbake-<date>` -- the distro and desktop lead,
+  the project brand marks the build date.

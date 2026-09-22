@@ -160,19 +160,19 @@ def _flatten_file(path: Path, root: Path, stack: list[Path],
 
 
 def output_paths(cfg: dict) -> tuple[Path, Path]:
-    """output/kickbake-fedora-plasma-44.1.7-26.09.07.iso (+ .ks)
+    """output/fedora-plasma-44.1.7-kickbake-26.09.07.iso (+ .ks)
 
     <name>-<fedora source version>-<YY.MM.DD>, .iso and .ks sharing the
     same base. Year-first keeps directory listings chronological. The
     trailing date is today (local time). Same-day rebuilds never
     overwrite: when either file already exists, a -N counter
     (-1, -2, ...) is appended for the pair."""
-    name = cfg["output"].get("name", "kickbake-fedora-plasma")
+    name = cfg["output"].get("name", "fedora-plasma")
     src = repo_path(cfg["iso"]["source"])
     version = src.stem.split("-x86_64-")[-1].replace("-", ".")
     outdir = repo_path(cfg["output"].get("dir", "output"))
     stamp = datetime.now().strftime("%y.%m.%d")
-    base = f"{name}-{version}-{stamp}"
+    base = f"{name}-{version}-kickbake-{stamp}"
     iso = outdir / f"{base}.iso"
     ks = outdir / f"{base}.ks"
     n = 1
