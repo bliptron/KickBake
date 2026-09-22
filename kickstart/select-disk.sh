@@ -272,7 +272,7 @@ done
     echo ""
     echo "# EFI + /boot: fixed 1 GiB each, on the host disk (UKI preparation)"
     echo "part /boot/efi  --fstype=efi   --size=1024 --ondisk=$DISK"
-    echo "part /boot      --fstype=ext4  --size=1024 --ondisk=$DISK"
+    echo "part /boot      --fstype=ext4  --size=1024 --label=boot --ondisk=$DISK"
     echo ""
     echo "# host Btrfs filesystem (replaceable machine state)"
     if [ "$COUNT" -eq 1 ]; then

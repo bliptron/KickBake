@@ -52,7 +52,7 @@ repo_groups = "kde-desktop-environment core admin-tools desktop-accessibility kd
 # VM transfers / old sticks are instantly recognizable at the boot menu.
 # Its number is also the leading counter of the output filename
 # (12-kickbake-fedora-plasma-44.1.7.iso).
-menu_version = "44-39"
+menu_version = "44-40"
 
 # mkksiso's own ESP rebuild (mkefiboot) needs loop devices, which rootless
 # podman cannot provide. Keep it skipped: podman/compose-offline.sh then
