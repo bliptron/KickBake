@@ -21,7 +21,7 @@ KickBake is strongly opinionated. These are features, not limitations to be fixe
 - **Fail always close.** Invalid input, EOF, an unexpected condition, a tiny disk, the machine powers off with nothing written. Only an explicit `erase` lets Anaconda touch a disk.
 - **No full installer UI.** KickBake asks one disk selection followed by one destructive confirmation, and answers everything else itself. Anaconda's interactive interface is never exposed.
 - **Root is locked. No user is pre-created.** Fedora's initial setup collects the admin user at first boot. Machine birth does not include accounts.
-- **Boot safety is real.** The installed system boots from a safe-default GRUB; the installer entry is password-protected; the media announces its build date (`KickBake 26.09.22`) at the boot menu so stale media is immediately obvious; and stale firmware boot entries from previous installs are cleaned at install time.
+- **Boot safety is real.** The installed system boots from a safe-default GRUB; the installer entry is password-protected; the media announces its build date (`KickBake 26.09.22`) at the boot menu so stale media is immediately obvious; stale firmware boot entries from previous installs are cleaned at install time. The installed boot menu is hidden with a 2-second timeout — hold `Shift` during boot to reveal it.
 - **Visible progress, no secrets.** The install proceeds unattended with normal Anaconda progress once the disk is confirmed.
 
 ---

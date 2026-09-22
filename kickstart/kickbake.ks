@@ -37,8 +37,9 @@ efibootmgr
 #   so future kernel updates arrive consistently named (a retitle here only
 #   covered the installed kernel; updated kernels came back stock-named)
 # - no rescue entry (grubby's 0-rescue item removed)
-# - default=saved + SAVEDEFAULT (last selection persists) and 10s to
-#   selection, same as the ISO
+# - default=saved + SAVEDEFAULT (last selection persists)
+# - hidden menu: KickBake is single-OS, so the menu stays hidden with a
+#   2s timeout; hold SHIFT at boot to reveal it
 # - flat menu (no Advanced submenu); UEFI Firmware Settings entry stays.
 %post --log=/root/kickbake-post.log
 # The machine boots itself and nothing else: without this, grub2-mkconfig
@@ -51,8 +52,11 @@ grep -q '^GRUB_DEFAULT=' /etc/default/grub \
 # Remember the last selected entry across reboots (pairs with DEFAULT=saved).
 echo 'GRUB_SAVEDEFAULT=true' >> /etc/default/grub
 grep -q '^GRUB_TIMEOUT=' /etc/default/grub \
-    && sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=10/' /etc/default/grub \
-    || echo 'GRUB_TIMEOUT=10' >> /etc/default/grub
+    && sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=2/' /etc/default/grub \
+    || echo 'GRUB_TIMEOUT=2' >> /etc/default/grub
+grep -q '^GRUB_TIMEOUT_STYLE=' /etc/default/grub \
+    && sed -i 's/^GRUB_TIMEOUT_STYLE=.*/GRUB_TIMEOUT_STYLE=hidden/' /etc/default/grub \
+    || echo 'GRUB_TIMEOUT_STYLE=hidden' >> /etc/default/grub
 grep -q '^GRUB_DISABLE_RECOVERY=' /etc/default/grub \
     && sed -i 's/^GRUB_DISABLE_RECOVERY=.*/GRUB_DISABLE_RECOVERY=true/' /etc/default/grub \
     || echo 'GRUB_DISABLE_RECOVERY=true' >> /etc/default/grub
