@@ -29,6 +29,7 @@ rootpw --lock
 @kde-media
 @kde-pim
 @libreoffice
+efibootmgr
 %end
 
 # Installed-system boot menu (birth-level bootloader config).
@@ -73,6 +74,19 @@ chmod 755 /data
 if command -v semanage >/dev/null 2>&1; then
     semanage fcontext -a -t var_t "/data(/.*)?" 2>/dev/null || true
     restorecon -RvF /data
+fi
+# NVRAM hygiene: repeated installs and prior operating systems leave
+# stale UEFI boot entries in the firmware (dangling "Fedora Linux" and
+# "Windows Boot Manager" entries on a wiped disk). Delete our leftovers
+# and those dangling entries, keep the fresh entry, and make it the only
+# boot choice. Fail-soft: NVRAM must never fail an install.
+if [ -d /sys/firmware/efi ] && command -v efibootmgr >/dev/null 2>&1; then
+    current=$(efibootmgr | awk '/\* Fedora Linux/ {print $1}' | tail -1 | tr -d '*')
+    efibootmgr | awk '/\* (Fedora Linux|Windows Boot Manager)/ {print $1}' \
+        | tr -d '*' | while read -r b; do
+            [ "$b" = "$current" ] || efibootmgr -b "$b" -B >/dev/null 2>&1 || true
+        done
+    [ -n "$current" ] && efibootmgr -o "$current" >/dev/null 2>&1 || true
 fi
 # Space reclamation in VMs: weekly TRIM as the deterministic safety net.
 # btrfs defaults to discard=async on kernels 6.2+, so the fragment stays
