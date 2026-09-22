@@ -82,6 +82,11 @@ for n in $(lsblk -rno NAME,LABEL 2>/dev/null | awk '$2 ~ /^Fedora-E-dvd/ {print 
     d=$(lsblk -rno PKNAME "/dev/$n" 2>/dev/null | head -1)
     MEDIADISK="$MEDIADISK ${d:-$n}"
 done
+# Also pin the disk actually serving the running installer: media-writing
+# tools (Rufus) can rename the label, so the Fedora-E-dvd match above is
+# not the only path the boot medium arrives by.
+stage_src=$(findmnt -n -o SOURCE /run/install/root 2>/dev/null | sed 's/\[.*//')
+[ -n "$stage_src" ] && MEDIADISK="$MEDIADISK $(lsblk -rno PKNAME "$stage_src" 2>/dev/null | head -1)"
 
 eligible() {
     local n="$1" base="/sys/block/$1" why
@@ -97,6 +102,15 @@ eligible() {
     fi
     # /sys/block/X/size is in 512-byte sectors -- convert to MiB before
     # comparing against the floor (MIN_DISK_MIB is MiB, not sectors).
+    # Transport class: USB and MMC media are never install targets --
+    # modern sticks report removable=0, so the flag alone cannot be
+    # trusted. Everything internal (nvme, sata, ide, scsi, virtio)
+    # remains eligible; unknown transports fail open to the other layers.
+    local tran
+    tran=$(lsblk -rno TRAN "/dev/$n" 2>/dev/null)
+    case "$tran" in
+        usb|mmc) echo "skip $n: $tran transport" >>"$LOG"; return 1 ;;
+    esac
     if ! [ "$(( $(cat "$base/size" 2>/dev/null || echo 0) / 2048 ))" \
           -ge "$MIN_DISK_MIB" ] 2>/dev/null; then
         echo "skip $n: below the 24 GiB eligibility floor" >>"$LOG"; return 1

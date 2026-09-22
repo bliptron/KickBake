@@ -10,6 +10,14 @@ Changes on the road to 1.0.0, since `0.9.0-rc.1`.
 
 ### Fixed
 
+- **USB flash drives could appear as install targets.** Modern sticks
+  report `removable=0`, defeating the removable-flag check (that check
+  was relaxed because NVMe devices lack the attribute). The eligibility
+  filter is now layered: the disk serving the running installer is always
+  excluded (even when a media-writing tool renamed its label), USB and
+  MMC transports are excluded by kernel transport class, and the
+  removable flag, the 24 GiB floor and the pseudo-device list remain.
+  Internal NVMe/SATA/IDE/SCSI and VirtIO disks are unaffected.
 - **`/data` was not writable by the admin user.** A fresh Btrfs subvolume
   root is always `root:root 0755`, and nothing set ownership after the
   mount — writes failed for every non-root user, and reformatting did not
