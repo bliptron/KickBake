@@ -18,6 +18,16 @@ Changes on the road to 1.0.0, since `0.9.0-rc.1`.
   developed and soak-tested on a Fedora VM, bundled into the media so
   machines have the option to wear it.
 
+### Added
+
+- **NVRAM hygiene.** Repeated installs leave stale UEFI boot entries in
+  the firmware, and wiped disks leave dangling `Windows Boot Manager`
+  entries behind. `%post` now removes exactly those (pattern-matched),
+  keeps the fresh entry, and sets it as the only boot choice. Fail-soft:
+  an unwilling firmware never fails the install. `efibootmgr` joined the
+  installed payload to make it possible.
+- The `/boot` partition is labelled `boot`.
+
 ### Fixed
 
 - **USB flash drives could appear as install targets.** Modern sticks

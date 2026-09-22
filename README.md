@@ -21,7 +21,7 @@ KickBake is strongly opinionated. These are features, not limitations to be fixe
 - **Fail always close.** Invalid input, EOF, an unexpected condition, a tiny disk, the machine powers off with nothing written. Only an explicit `erase` lets Anaconda touch a disk.
 - **No full installer UI.** KickBake asks one disk selection followed by one destructive confirmation, and answers everything else itself. Anaconda's interactive interface is never exposed.
 - **Root is locked. No user is pre-created.** Fedora's initial setup collects the admin user at first boot. Machine birth does not include accounts.
-- **Boot safety is real.** The installed system boots from a safe-default GRUB; the installer entry is password-protected; and the media announces its build date (`KickBake 26.09.15`) at the boot menu so stale media is immediately obvious.
+- **Boot safety is real.** The installed system boots from a safe-default GRUB; the installer entry is password-protected; the media announces its build date (`KickBake 26.09.22`) at the boot menu so stale media is immediately obvious; and stale firmware boot entries from previous installs are cleaned at install time.
 - **Visible progress, no secrets.** The install proceeds unattended with normal Anaconda progress once the disk is confirmed.
 
 ---
@@ -116,7 +116,7 @@ KickBake offers exactly one layout, computed from the disk you choose:
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Eligibility                   | whole fixed disks ≥ 24 GiB only                                                                                                                                                |
 | EFI                           | 1 GiB, fixed, generous by design, in preparation for Unified Kernel Image (UKI)                                                                                                |
-| /boot                         | 1 GiB, fixed, ext4, also generous. After UKI, /boot can optionally be merged into the EFI partition                                                                            |
+| /boot                         | 1 GiB, fixed, ext4, labelled `boot` — also generous. After UKI, /boot can optionally be merged into the EFI partition                                                          |
 | host (root + home, Btrfs)     | ***single disk***: 25% of the disk, rounded up, snapped to a power-of-two step. Minimum 16 GiB, maximum 256 GiB. · ***multi disk***: 100% of the host disk (minus EFI + /boot) |
 | data (persistent data, Btrfs) | ***single disk***: everything that remains · ***multi disk***: one Btrfs filesystem spanning every other eligible disk                                                         |
 
