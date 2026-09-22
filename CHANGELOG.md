@@ -8,6 +8,16 @@ follows [Semantic Versioning](https://semver.org/).
 
 Changes on the road to 1.0.0, since `0.9.0-rc.1`.
 
+### Planned
+
+- **Ansible handover.** A companion repository (`kickbake-configure`) that
+  gives each newborn machine its personality — admin user, desktop
+  preferences beyond stock Plasma, applications, security policy, shells,
+  dotfiles, SSH keys. KickBake owns birth; Ansible owns everything after.
+- **KickBake theme in the ISO.** A visual theme for the installed desktop,
+  developed and soak-tested on a Fedora VM, bundled into the media so
+  machines are born wearing it.
+
 ### Fixed
 
 - **USB flash drives could appear as install targets.** Modern sticks
