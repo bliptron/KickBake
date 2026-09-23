@@ -63,6 +63,11 @@ grep -q '^GRUB_DISABLE_RECOVERY=' /etc/default/grub \
 grep -q '^GRUB_DISABLE_SUBMENU=' /etc/default/grub \
     && sed -i 's/^GRUB_DISABLE_SUBMENU=.*/GRUB_DISABLE_SUBMENU=true/' /etc/default/grub \
     || echo 'GRUB_DISABLE_SUBMENU=true' >> /etc/default/grub
+# Kernel retention: keep two kernels (the running one plus one fallback);
+# the stock Fedora default is three.
+grep -q '^installonly_limit=' /etc/dnf/dnf.conf \
+    && sed -i 's/^installonly_limit=.*/installonly_limit=2/' /etc/dnf/dnf.conf \
+    || echo 'installonly_limit=2' >> /etc/dnf/dnf.conf
 rm -f /boot/loader/entries/*0-rescue*.conf
 grub2-mkconfig -o /boot/grub2/grub.cfg
 [ -d /boot/efi/EFI/fedora ] && grub2-mkconfig -o /boot/efi/EFI/fedora/grub.cfg
