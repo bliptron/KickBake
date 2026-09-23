@@ -139,6 +139,8 @@ Worked examples:
 
 Every install gets host + data: the chosen disk hosts `host`, and every other eligible disk joins `data`. There is no other layout, no interactive partitioning, and no way to opt out. That is the point. (After installation the machine is yours: repartition, grow, shrink, do whatever you like. Birth is opinionated; life is yours.) The data is a plain multi-device Btrfs filesystem. It prioritizes capacity, not data redundancy. File data is not mirrored, so failure of any member disk can affect the filesystem.
 
+**The `erase` is total on the confirmed disks**: every existing partition — old operating systems, EFI leftovers, recovery partitions — is removed before the fresh layout is written, and stale firmware boot entries are cleaned from NVRAM in the same pass. Installed systems keep two kernels (`installonly_limit=2`).
+
 **One filesystem, many devices.** On multi-disk machines the data is a single Btrfs filesystem spanning every non-host disk, and file managers (Dolphin's Devices panel) list each member separately (several identical `data` entries, one `host`, the EFI partition). Ignore those entries: everything lives in ONE place, the data mounted at `/data`. Add `/data` to your Places (favourites) and work from there.
 
 ---
