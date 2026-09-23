@@ -4,19 +4,9 @@ All notable changes to KickBake are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.0] - 2026-09-23
 
-Changes on the road to 1.0.0, since `0.9.0-rc.1`.
-
-### Planned
-
-- **Ansible handover.** A companion repository (`kickbake-configure`) that
-  gives each newborn machine its personality — admin user, desktop
-  preferences beyond stock Plasma, applications, security policy, shells,
-  dotfiles, SSH keys. KickBake owns birth; Ansible owns everything after.
-- **KickBake theme in the ISO.** A visual theme for the installed desktop,
-  developed and soak-tested on a Fedora VM, bundled into the media so
-  machines have the option to wear it.
+The first stable release: every machine, born the same way.
 
 ### Added
 
@@ -27,6 +17,8 @@ Changes on the road to 1.0.0, since `0.9.0-rc.1`.
   an unwilling firmware never fails the install. `efibootmgr` joined the
   installed payload to make it possible.
 - The `/boot` partition is labelled `boot`.
+- Kernel retention: installed systems keep two kernels
+  (`installonly_limit=2`).
 
 ### Fixed
 
@@ -60,3 +52,15 @@ Changes on the road to 1.0.0, since `0.9.0-rc.1`.
 - Output naming: `kickbake-fedora-plasma-44.1.7-<date>` becomes
   `fedora-plasma-44.1.7-kickbake-<date>` -- the distro and desktop lead,
   the project brand marks the build date.
+- The installed GRUB menu is hidden (2s timeout; hold `Shift` to reveal),
+  per the owner's tested configuration.
+
+## Planned (post-1.0.0)
+
+- **Ansible handover.** A companion repository (`kickbake-configure`) that
+  gives each newborn machine its personality — admin user, desktop
+  preferences beyond stock Plasma, applications, security policy, shells,
+  dotfiles, SSH keys. KickBake owns birth; Ansible owns everything after.
+- **KickBake theme in the ISO.** A visual theme for the installed desktop,
+  developed and soak-tested on a Fedora VM, bundled into the media so
+  machines have the option to wear it.
