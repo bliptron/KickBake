@@ -64,7 +64,8 @@ KickBake is strongly opinionated. These are features, not limitations to be fixe
 Clone the repository and enter it:
 
 ```bash
-git clone https://github.com/bliptron/KickBake
+git clone https://github.com/bliptron/KickBake     # GitHub
+git clone https://gitlab.com/bliptron/kickbake.git  # GitLab
 cd KickBake
 ```
 
