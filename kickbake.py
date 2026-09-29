@@ -41,7 +41,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - reported by doctor
     tomllib = None
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_CONFIG = ROOT / "config" / "kickbake.toml"
@@ -86,10 +86,25 @@ def load_config(path: Path) -> dict:
     return cfg
 
 
+def require_under_root(path: Path, what: str) -> Path:
+    """Resolve `path` and refuse anything outside the repository root.
+
+    podman mounts exactly ROOT at /work, so a path outside it can never
+    work; the naive alternative (Path.relative_to) raises a bare ValueError,
+    which main() does not catch, instead of the clean error the CLI contract
+    promises everywhere else."""
+    p = path.resolve()
+    if p != ROOT and ROOT not in p.parents:
+        raise BuildError(
+            f"{what} must be inside the repository root ({ROOT}): {path}"
+        )
+    return p
+
+
 def repo_path(value: str) -> Path:
-    """Resolve a config path against the repository root."""
+    """Resolve a config path against the repository root, contained in it."""
     p = Path(value)
-    return p if p.is_absolute() else ROOT / p
+    return require_under_root(p if p.is_absolute() else ROOT / p, "config path")
 
 
 # --------------------------------------------------------------------------
@@ -152,27 +167,40 @@ def _flatten_file(path: Path, root: Path, stack: list[Path],
             trace.append(f"{'  ' * len(stack)}{target} (runtime)")
             out.append(line)
             continue
+        child = (root / target).resolve()
+        if child != root and root not in child.parents:
+            raise BuildError(
+                f"{rel}: %include '{target}' escapes the kickstart tree "
+                f"root ({root})"
+            )
         out.append(f"# >>> begin include {target} (from {rel})")
-        out.extend(_flatten_file((root / target).resolve(), root, stack, trace))
+        out.extend(_flatten_file(child, root, stack, trace))
         out.append(f"# <<< end include {target}")
     stack.pop()
     return out
 
 
-def output_paths(cfg: dict) -> tuple[Path, Path]:
-    """output/fedora-plasma-44.1.7-kickbake-26.09.07.iso (+ .ks)
+def output_paths(cfg: dict, stamp: str | None = None) -> tuple[Path, Path]:
+    """output/fedora-plasma-44-kickbake-26.09.07.iso (+ .ks)
 
-    <name>-<fedora source version>-<YY.MM.DD>, .iso and .ks sharing the
+    <name>-<fedora release>-<YY.MM.DD>, .iso and .ks sharing the
     same base. Year-first keeps directory listings chronological. The
     trailing date is today (local time). Same-day rebuilds never
     overwrite: when either file already exists, a -N counter
-    (-1, -2, ...) is appended for the pair."""
+    (-1, -2, ...) is appended for the pair. `stamp` defaults to today
+    (local time); callers that must agree on one date (build) pass it
+    explicitly so the filename and the menu title cannot diverge.
+
+    The Fedora release comes from the config, never from the source ISO's
+    filename: the file may be renamed freely (verify-iso hashes its
+    contents), and a netinst refresh within one release must not change
+    the naming scheme."""
     name = cfg["output"].get("name", "fedora-plasma")
-    src = repo_path(cfg["iso"]["source"])
-    version = src.stem.split("-x86_64-")[-1].replace("-", ".")
+    release = cfg["fedora"]["release"]
     outdir = repo_path(cfg["output"].get("dir", "output"))
-    stamp = datetime.now().strftime("%y.%m.%d")
-    base = f"{name}-{version}-kickbake-{stamp}"
+    if stamp is None:
+        stamp = datetime.now().strftime("%y.%m.%d")
+    base = f"{name}-{release}-kickbake-{stamp}"
     iso = outdir / f"{base}.iso"
     ks = outdir / f"{base}.ks"
     n = 1
@@ -194,6 +222,18 @@ def write_checksum_file(iso_path: Path) -> Path:
 # podman plumbing
 # --------------------------------------------------------------------------
 
+def require_podman() -> None:
+    """Raise BuildError (not FileNotFoundError) when podman is absent.
+
+    main() only catches BuildError, so without this the first
+    subprocess.run(["podman", ...]) surfaces as a raw traceback."""
+    if shutil.which("podman") is None:
+        raise BuildError(
+            "podman not found on PATH -- install rootless podman and re-run "
+            "(see the README requirements)"
+        )
+
+
 def podman_run(cfg: dict, container_args: list[str],
                stream: bool = False) -> subprocess.CompletedProcess:
     """Run a command in the toolchain container with the repo at /work.
@@ -205,6 +245,7 @@ def podman_run(cfg: dict, container_args: list[str],
     stream=True attaches a TTY and inherits stdio so long-running steps
     (dnf downloads) show their live progress meters; the returned
     CompletedProcess carries no captured output."""
+    require_podman()
     cmd = [
         "podman", "run", "--rm",
         "--volume", f"{ROOT}:/work",
@@ -221,6 +262,7 @@ def podman_run(cfg: dict, container_args: list[str],
 
 
 def ensure_builder_image(cfg: dict, rebuild: bool = False) -> None:
+    require_podman()
     image = cfg["fedora"]["builder_image"]
     exists = subprocess.run(
         ["podman", "image", "exists", image], capture_output=True
@@ -270,6 +312,29 @@ def do_flatten(cfg: dict, flat: Path) -> Path:
     return flat
 
 
+def classify_ksvalidator(lines: list[str]) -> tuple[list[str], list[str]]:
+    """Split ksvalidator output into (cosmetic, non_cosmetic) lines.
+
+    Pure -- no I/O -- so it is unit-tested directly.
+
+    cosmetic     : matches a KNOWN_COSMETIC_WARNINGS pattern (the
+                   pykickstart btrfs-volume quirk; see that constant).
+    non_cosmetic : everything else except the "Checking kickstart file"
+                   progress line, i.e. the output that actually matters.
+
+    A non-zero exit code with non-cosmetic output is a hard failure. A zero
+    exit code with non-cosmetic output is a warning that must still be
+    shown: dropping it silently hides a future ksvalidator complaint whose
+    exit code we did not anticipate.
+    """
+    cosmetic = [ln for ln in lines
+                if any(pat in ln for pat in KNOWN_COSMETIC_WARNINGS)]
+    non_cosmetic = [ln for ln in lines
+                    if ln not in cosmetic
+                    and not ln.startswith("Checking kickstart file")]
+    return cosmetic, non_cosmetic
+
+
 def do_validate(cfg: dict, flat: Path) -> None:
     version = ksvalidator_version(cfg)
     rel = flat.relative_to(ROOT)
@@ -282,13 +347,12 @@ def do_validate(cfg: dict, flat: Path) -> None:
     proc = podman_run(cfg, ["bash", "-c", script])
     lines = [ln.strip() for ln in (proc.stdout + proc.stderr).splitlines()
              if ln.strip()]
-    cosmetic = [ln for ln in lines
-                if any(pat in ln for pat in KNOWN_COSMETIC_WARNINGS)]
-    fatal = [ln for ln in lines
-             if ln not in cosmetic
-             and not ln.startswith("Checking kickstart file")]
-    if proc.returncode != 0 and fatal:
-        raise BuildError("kickstart validation failed:\n" + "\n".join(fatal))
+    cosmetic, non_cosmetic = classify_ksvalidator(lines)
+    if proc.returncode != 0 and non_cosmetic:
+        raise BuildError("kickstart validation failed:\n"
+                         + "\n".join(non_cosmetic))
+    for ln in non_cosmetic:
+        print(f"[validate] NOTE ksvalidator output (exit 0): {ln}")
     for ln in cosmetic:
         print(f"[validate] NOTE known-cosmetic warning (see kickbake.py): {ln}")
     print("[validate] OK"
@@ -364,10 +428,15 @@ def cmd_pin_iso(cfg: dict, args: argparse.Namespace) -> int:
         shutil.copy2(new_iso, dest)
     config_path = Path(args.config).resolve()
     text = config_path.read_text(encoding="utf-8")
+    # Replacement callables, never f-string replacements: re.subn interprets
+    # backslash escapes in a replacement string, so a filename containing
+    # \1 or \g<...> would corrupt the config (or raise) instead of being
+    # written literally.
     text, n_source = re.subn(r'(?m)^source = ".*"$',
-                             f'source = "assets/{new_iso.name}"', text)
+                             lambda m: f'source = "assets/{new_iso.name}"',
+                             text)
     text, n_hash = re.subn(r'(?m)^expected_sha256 = ".*"$',
-                           f'expected_sha256 = "{actual}"', text)
+                           lambda m: f'expected_sha256 = "{actual}"', text)
     if n_source != 1 or n_hash != 1:
         raise BuildError(
             f"pin-iso: config update unsafe (source matches: {n_source}, "
@@ -398,7 +467,7 @@ def read_volid(cfg: dict, iso: Path) -> str:
 
 
 def do_mkksiso(cfg: dict, flat: Path, out: Path, stage: Path,
-               volid: str) -> Path:
+               volid: str, stamp: str) -> Path:
     """mkksiso stage: embed kickstart + offline repo, add kernel args.
     Returns the STAGE iso; ESP rebuild happens in do_compose_offline."""
     iso = repo_path(cfg["iso"]["source"])
@@ -418,8 +487,8 @@ def do_mkksiso(cfg: dict, flat: Path, out: Path, stage: Path,
     # Menu title brand: KickBake <build date YY.MM.DD>, matching the dated
     # output name, e.g. "Install Fedora 44 - KickBake 26.09.14". The typed
     # confirmation and GRUB auth live in compose-offline.sh hardening, not
-    # the title.
-    stamp = datetime.now().strftime("%y.%m.%d")
+    # the title. `stamp` is computed once by cmd_build so the title, the
+    # output filename and the output verification cannot straddle midnight.
     rel = cfg["fedora"]["release"]
     cmd += ["-R", f"Install Fedora {rel}",
             f"Install Fedora {rel} - KickBake {stamp}"]
@@ -511,6 +580,9 @@ def do_build_repo(cfg: dict) -> None:
         f"find /work/cache/dnf-cache -name '*.rpm' -exec mv {{}} "
         f"/work/{rel}/Packages/ \\;",
         "# 2b. prune superseded versions: keep only the newest rpm per name",
+        "# ${stem%-*-*} assumes NEVRA name-[epoch:]version-release, so an",
+        "# epoch (name-1:1.2-3) would stay in the key and two rpms could look",
+        "# like different names. Harmless today; revisit if epochs become common.",
         f"cd /work/{rel}/Packages",
         "declare -A newest=()",
         "for f in *.rpm; do",
@@ -531,7 +603,9 @@ def do_build_repo(cfg: dict) -> None:
         "dnf -q -y install createrepo_c >/dev/null 2>&1",
         f"createrepo_c --groupfile=/tmp/comps.xml /work/{rel}",
         "# 4. self-verify: resolve the group against ONLY this repo",
-        f"mkdir -p /tmp/verify /tmp/verify-cache",
+        # Both verify passes reuse the persistent /work cache; only the
+        # installroots must exist. (/tmp/verify-cache was never referenced.)
+        f"mkdir -p /tmp/verify /tmp/verify2",
         f"dnf -y -q --disablerepo='*' --repofrompath=kb,/work/{rel} "
         f"--releasever={release} --installroot=/tmp/verify "
         f"--setopt=cachedir=/work/cache/dnf-cache group install {groups} "
@@ -540,8 +614,9 @@ def do_build_repo(cfg: dict) -> None:
         f"--releasever={release} --installroot=/tmp/verify2 "
         f"--setopt=cachedir=/work/cache/dnf-cache install {extras} "
         "--downloadonly",
-        # set -e makes a failed resolve fatal; the persistent cache means
-        # the verify passes re-download nothing.
+        # set -e makes a failed resolve fatal; step 2 moved every rpm out
+        # of the cache, so these passes repopulate it from the local repo
+        # (fast, no network) -- this check proves they actually resolved.
         "test -n \"$(find /work/cache/dnf-cache -name '*.rpm' | head -1)\"",
         f"touch /work/{rel}/.done",
         f"echo \"[repo] ready + comps + self-verified: "
@@ -555,7 +630,8 @@ def do_build_repo(cfg: dict) -> None:
             "offline repo build failed -- see the live output above")
 
 
-def do_verify_output(cfg: dict, out: Path, volid: str, ks: Path) -> None:
+def do_verify_output(cfg: dict, out: Path, volid: str, ks: Path,
+                     stamp: str) -> None:
     """Prove the composed ISO is kickstart-enabled, self-contained and
     bootable: the tree grub.cfg (BIOS + UEFI copies) carries
     inst.ks/inst.repo; the HIDDEN ESP (appended GPT partition 2) carries
@@ -563,7 +639,6 @@ def do_verify_output(cfg: dict, out: Path, volid: str, ks: Path) -> None:
     Torito records survived. Both UEFI menus must be lean (no media
     test) and carry the KickBake <date> title."""
     rel = out.relative_to(ROOT)
-    stamp = datetime.now().strftime("%y.%m.%d")
     script = (
         "V=/work/" + str(rel) + "; "
         "xorriso -osirrox on -indev $V -extract /boot/grub2/grub.cfg "
@@ -624,7 +699,12 @@ def do_verify_output(cfg: dict, out: Path, volid: str, ks: Path) -> None:
 # commands
 # --------------------------------------------------------------------------
 
-def cmd_doctor(cfg: dict, args: argparse.Namespace) -> int:
+def cmd_doctor(cfg: dict | None, args: argparse.Namespace) -> int:
+    """Report the environment, loading our own config.
+
+    `main` deliberately does not pre-load the config for doctor: a broken
+    config must surface as a doctor finding, not abort before the report has
+    begun. The incoming `cfg` is therefore ignored (normally None)."""
     ok = True
 
     def check(label: str, passed: bool, detail: str = "") -> None:
@@ -637,8 +717,9 @@ def cmd_doctor(cfg: dict, args: argparse.Namespace) -> int:
           sys.version.split()[0])
     check("podman on PATH", shutil.which("podman") is not None)
     try:
-        cfg = load_config(Path(args.config))
-        check("config loads", True, str(Path(args.config).relative_to(ROOT)))
+        cfg_path = require_under_root(Path(args.config), "--config")
+        cfg = load_config(cfg_path)
+        check("config loads", True, str(cfg_path.relative_to(ROOT)))
     except BuildError as exc:
         check("config loads", False, str(exc))
         return 1
@@ -721,17 +802,26 @@ def cmd_build(cfg: dict, args: argparse.Namespace) -> int:
     t0 = time.monotonic()
     ensure_builder_image(cfg)
     verify_source_iso(cfg)
-    out, flat = output_paths(cfg)
+    # One date for the whole build: the output filename, the menu title and
+    # the output verification all read this value. Recomputing it in each
+    # step made a build that crossed midnight fail verification on a good ISO.
+    stamp = datetime.now().strftime("%y.%m.%d")
+    out, flat = output_paths(cfg, stamp)
     flat = do_flatten(cfg, flat)
     do_validate(cfg, flat)
     iso = repo_path(cfg["iso"]["source"])
     volid = read_volid(cfg, iso)
     print(f"[compose] source volume id: {volid}")
     stage = out.with_name(out.stem + ".stage.iso")
-    stage = do_mkksiso(cfg, flat, out, stage, volid)
-    out = do_compose_offline(cfg, stage, out, volid)
-    do_verify_output(cfg, out, volid, flat)
-    stage.unlink()  # reclaim the multi-GB intermediate
+    try:
+        stage = do_mkksiso(cfg, flat, out, stage, volid, stamp)
+        out = do_compose_offline(cfg, stage, out, volid)
+        do_verify_output(cfg, out, volid, flat, stamp)
+    finally:
+        # Reclaim the multi-GB intermediate on success AND on failure: a
+        # failed build used to leave *.stage.iso behind in output/.
+        if stage.exists():
+            stage.unlink()
     ck = write_checksum_file(out)
     print(f"[sha256]  wrote {ck.relative_to(ROOT)}")
     print(f"[build]   done in {time.monotonic() - t0:.1f}s -> "
@@ -781,7 +871,16 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     try:
-        cfg = load_config(Path(args.config))
+        if args.command == "doctor":
+            # doctor loads its own config and reports a broken one; a
+            # pre-load here would abort before that report could start.
+            return DISPATCH[args.command](None, args)
+        # Container-visible paths live under ROOT (podman mounts it at
+        # /work), so the config must too. Resolve and check here so every
+        # command reports it the same clean way.
+        cfg_path = require_under_root(Path(args.config), "--config")
+        args.config = str(cfg_path)
+        cfg = load_config(cfg_path)
         return DISPATCH[args.command](cfg, args)
     except BuildError as exc:
         print(f"error: {exc}", file=sys.stderr)

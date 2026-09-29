@@ -55,7 +55,33 @@ The first stable release: every machine, born the same way.
 - The installed GRUB menu is hidden (2s timeout; hold `Shift` to reveal),
   per the owner's tested configuration.
 
-## Planned (post-1.0.0)
+## [1.0.1] - 2026-09-29
+
+Minor bug fixes and internal cleanup; the installed system is unchanged.
+
+### Changed
+
+- Output naming drops the Fedora netinst revision:
+  `fedora-plasma-44-kickbake-<YY.MM.DD>`. The Fedora release now comes from
+  the config, so the source ISO may be renamed freely. The unused
+  `menu_version` key is gone.
+
+### Fixed
+
+- Minor bug fixes: clearer failures when a path, a config file or podman is
+  missing; `ksvalidator` output is no longer silently dropped; a failed
+  build no longer leaves its multi-GB intermediate behind.
+
+## Planned for 1.1.0
+
+- **`doctor` explains an end-of-life Fedora release.** When the configured
+  release has left the live mirrors, `doctor` says so and points at the
+  Fedora archive recovery path, instead of letting the next `repo`/`build`
+  fail with a bare network error. Advisory only: it never changes doctor's
+  exit code, and an already-built ISO is unaffected. Companion README note
+  ("building after a release goes EOL").
+
+## Planned for 2.0.0
 
 - **Ansible handover.** A companion repository (`kickbake-configure`) that
   gives each newborn machine its personality — admin user, desktop
@@ -64,3 +90,16 @@ The first stable release: every machine, born the same way.
 - **KickBake theme in the ISO.** A visual theme for the installed desktop,
   developed and soak-tested on a Fedora VM, bundled into the media so
   machines have the option to wear it.
+- **Standalone refresh.** A dedicated operation (e.g.
+  `python3 kickbake.py refresh`) that re-resolves the offline closure
+  against the current Fedora release + updates and replaces `cache/repo`
+  in place. Deliberately independent of both `build` — which never
+  refreshes — and `repo`, which stays build-once and short-circuits on
+  `cache/repo/.done`. Today the same effect requires deleting that marker
+  by hand, as `repo` reports `[repo] already built` and exits.
+- **Automatic ISO update in place of `pin-iso`.** `pin-iso` is replaced by
+  a single update command that refreshes the pinned source ISO and keeps
+  `[iso] source`, `expected_sha256` and `[fedora] release` in sync in one
+  step, with a simplified argument set. Today pinning is manual: the ISO
+  is passed by path, the official checksum via `--checksum`, and the
+  Fedora release is edited by hand.

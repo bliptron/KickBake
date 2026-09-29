@@ -47,13 +47,6 @@ repo_extra_packages = "kernel grub2-efi-x64 shim-x64 efibootmgr grub2-tools-extr
 # against the repo alone, so a missing member can never reach a VM again.
 repo_groups = "kde-desktop-environment core admin-tools desktop-accessibility kde-apps kde-desktop kde-media kde-pim libreoffice"
 
-# Version marker appended to GRUB menu titles, e.g.
-# "Install Fedora 44 (KickBake 44-1)". Bump per build iteration so cached
-# VM transfers / old sticks are instantly recognizable at the boot menu.
-# Its number is also the leading counter of the output filename
-# (fedora-plasma-44.1.7-kickbake-26.09.22.iso).
-menu_version = "44-43"
-
 # mkksiso's own ESP rebuild (mkefiboot) needs loop devices, which rootless
 # podman cannot provide. Keep it skipped: podman/compose-offline.sh then
 # rebuilds the embedded ESP rootlessly (mkfs.vfat -C + mcopy + xorriso

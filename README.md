@@ -95,12 +95,22 @@ python3 kickbake.py repo      # build the offline KDE repo (once; refresh when y
 python3 kickbake.py build     # bake the ISO
 ```
 
+`build` never refreshes the package closure, and `repo` is build-once: when
+`cache/repo/.done` exists it reports `[repo] already built` and exits. To
+refresh the closure against the current Fedora release + updates, delete the
+marker first (only the delta is downloaded, thanks to `cache/dnf-cache`):
+
+```bash
+rm -f cache/repo/.done
+python3 kickbake.py repo
+```
+
 Output:
 
 ```
-output/fedora-plasma-44.1.7-kickbake-<YY.MM.DD>.iso
-output/fedora-plasma-44.1.7-kickbake-<YY.MM.DD>.iso.sha256
-output/fedora-plasma-44.1.7-kickbake-<YY.MM.DD>.ks
+output/fedora-plasma-44-kickbake-<YY.MM.DD>.iso
+output/fedora-plasma-44-kickbake-<YY.MM.DD>.iso.sha256
+output/fedora-plasma-44-kickbake-<YY.MM.DD>.ks
 ```
 
 The filename includes today's date (`YY.MM.DD`; same-day rebuilds never overwrite since they gain `-1`, `-2`, ...). The boot menu carries the build date, showing as `KickBake 26.09.22`, so stale media is unmistakable there.

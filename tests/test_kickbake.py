@@ -2,11 +2,11 @@
 
 import hashlib
 import sys
-from datetime import datetime
 import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import kickbake  # noqa: E402
@@ -58,6 +58,14 @@ class TestFlatten(unittest.TestCase):
             kickbake.flatten_ks(self.root / "a.ks", self.root)
         self.assertIn("cycle", str(ctx.exception))
 
+    def test_include_escaping_tree_raises(self):
+        # a %include that climbs out of the tree root must fail with a
+        # clean BuildError -- not a raw ValueError from Path.relative_to
+        self.write("entry.ks", "%include ../outside.ks\n")
+        with self.assertRaises(kickbake.BuildError) as ctx:
+            kickbake.flatten_ks(self.root / "entry.ks", self.root)
+        self.assertIn("escapes the kickstart tree", str(ctx.exception))
+
     def test_url_include_rejected(self):
         # legacy KICKBOOT token form must fail loudly, not silently pass
         self.write("entry.ks", "%include http://KICKBOOT/storage/vm-single.ks\n")
@@ -103,19 +111,23 @@ class TestChecksum(unittest.TestCase):
 
 class TestOutputNaming(unittest.TestCase):
     def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
+        # The output directory must live under the repository root:
+        # repo_path() enforces it, because the container only ever sees
+        # ROOT (mounted at /work), so an outside dir could never work.
+        tmp = tempfile.TemporaryDirectory(dir=kickbake.ROOT)
         self.addCleanup(tmp.cleanup)
         self.tmp = tmp.name
 
     def test_date_naming_and_same_day_counter(self):
         cfg = {
-            "iso": {
-                "source": "assets/Fedora-Everything-netinst-x86_64-44-1.7.iso"
-            },
+            # the source ISO's filename no longer influences the output
+            # name: the Fedora release comes from [fedora] release
+            "iso": {"source": "renamed-anything.iso"},
+            "fedora": {"release": 44},
             "output": {"dir": self.tmp, "name": "fedora-plasma"},
         }
         iso, ks = kickbake.output_paths(cfg)
-        base = "fedora-plasma-44.1.7-kickbake-" + datetime.now().strftime(
+        base = "fedora-plasma-44-kickbake-" + datetime.now().strftime(
             "%y.%m.%d")
         self.assertEqual(iso.name, f"{base}.iso")
         self.assertEqual(ks.name, f"{base}.ks")
@@ -125,6 +137,62 @@ class TestOutputNaming(unittest.TestCase):
         iso2, ks2 = kickbake.output_paths(cfg)
         self.assertEqual(iso2.name, f"{base}-1.iso")
         self.assertEqual(ks2.name, f"{base}-1.ks")
+
+
+class TestValidateClassification(unittest.TestCase):
+    """do_validate must never swallow ksvalidator output."""
+
+    def test_progress_line_is_dropped(self):
+        cosmetic, non_cosmetic = kickbake.classify_ksvalidator(
+            ["Checking kickstart file /tmp/vflat.ks"])
+        self.assertEqual(cosmetic, [])
+        self.assertEqual(non_cosmetic, [])
+
+    def test_known_cosmetic_is_separated(self):
+        pat = kickbake.KNOWN_COSMETIC_WARNINGS[0]
+        cosmetic, non_cosmetic = kickbake.classify_ksvalidator(
+            ["Checking kickstart file /tmp/vflat.ks",
+             pat,
+             "Some future ksvalidator warning"])
+        self.assertEqual(cosmetic, [pat])
+        self.assertEqual(non_cosmetic, ["Some future ksvalidator warning"])
+
+
+class TestPathContainment(unittest.TestCase):
+    """F-3: everything the container sees lives under ROOT (/work)."""
+
+    def test_relative_path_resolves_under_root(self):
+        p = kickbake.repo_path("assets/anything.iso")
+        self.assertEqual(p.parent, kickbake.ROOT / "assets")
+
+    def test_absolute_path_inside_root_is_accepted(self):
+        target = kickbake.ROOT / "output"
+        self.assertEqual(kickbake.repo_path(str(target)), target)
+
+    def test_escapes_are_rejected(self):
+        for bad in ("/etc/passwd", "../../etc/passwd",
+                    "a/../../../etc/passwd"):
+            with self.assertRaises(kickbake.BuildError):
+                kickbake.repo_path(bad)
+
+    def test_root_itself_is_contained(self):
+        self.assertEqual(
+            kickbake.require_under_root(kickbake.ROOT, "thing"),
+            kickbake.ROOT)
+
+
+class TestRequirePodman(unittest.TestCase):
+    """F-3: a missing podman must be a BuildError, not FileNotFoundError."""
+
+    def test_missing_podman_raises_build_error(self):
+        with mock.patch("kickbake.shutil.which", return_value=None):
+            with self.assertRaises(kickbake.BuildError):
+                kickbake.require_podman()
+
+    def test_present_podman_is_silent(self):
+        with mock.patch("kickbake.shutil.which",
+                        return_value="/usr/bin/podman"):
+            self.assertIsNone(kickbake.require_podman())
 
 
 if __name__ == "__main__":
