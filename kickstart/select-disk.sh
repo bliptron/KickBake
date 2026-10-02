@@ -4,10 +4,10 @@
 # the interactive selection on its OWN screen: a dedicated tmux window when
 # tmux is available (the normal case), the raw console otherwise.
 #
-# Flow (plans/MENUS.md):
+# Flow:
 #   single disk -> "this disk will be used for host + data" confirmation
 #   multi disk  -> pick the host disk; every other eligible disk joins the
-#                  data data (one Btrfs filesystem spanning those disks)
+#                  data filesystem (one Btrfs filesystem spanning those disks)
 #   then        -> unified layout readout -> typed 'erase' confirmation ->
 #                  write /tmp/kickbake-storage.ks -> anaconda continues
 #                  unattended.
@@ -26,9 +26,16 @@ UI=/tmp/kickbake-ui.sh
 
 say() { echo "$*" | tee -a "$LOG" > "$CONS"; }
 die() {
+    # Same wording and abort marker as the UI's die() (defined in the
+    # heredoc below) so a deliberate cancel reads identically whichever
+    # script reports it. `say` still goes to /dev/console here.
+    say "======================================================"
     say "KickBake: $*"
-    say "KickBake: nothing was written to any disk. Powering off."
+    say "KickBake: nothing was written to any disk."
+    say "KickBake: closing now -- the machine powers off."
+    say "======================================================"
     sleep 15
+    touch "$ABORT"
     poweroff
     sleep 999   # if poweroff failed, halt here rather than continue
 }
@@ -39,7 +46,7 @@ rm -f "$ABORT"
 cat > "$UI" <<'UIEOF'
 # KickBake disk selection UI. stdio is attached to a dedicated screen
 # (a tmux window, or the console as fallback) by the launcher.
-# Screens follow plans/MENUS.md.
+# The screens are rendered by the launcher below.
 FRAG=/tmp/kickbake-storage.ks
 ABORT=/tmp/kickbake-abort
 LOG=/tmp/kickbake-pre.log
@@ -86,7 +93,11 @@ done
 # tools (Rufus) can rename the label, so the Fedora-E-dvd match above is
 # not the only path the boot medium arrives by.
 stage_src=$(findmnt -n -o SOURCE /run/install/root 2>/dev/null | sed 's/\[.*//')
-[ -n "$stage_src" ] && MEDIADISK="$MEDIADISK $(lsblk -rno PKNAME "$stage_src" 2>/dev/null | head -1)"
+if [ -n "$stage_src" ]; then
+    MEDIADISK="$MEDIADISK $(lsblk -rno PKNAME "$stage_src" 2>/dev/null | head -1)"
+fi
+# The two sources usually name the same disk; keep the list truthful.
+MEDIADISK=$(printf '%s\n' $MEDIADISK | sort -u | tr '\n' ' ')
 
 eligible() {
     local n="$1" base="/sys/block/$1" why
@@ -146,7 +157,7 @@ done
 
 [ "$COUNT" -ge 1 ] || die "no eligible disks found."
 
-# ---- screen 1: pick the host disk (plans/MENUS.md) ----------------------
+# ---- screen 1: pick the host disk --------------------------------------
 if [ "$COUNT" -eq 1 ]; then
     say "This disk will be used for host + data:"
     say ""
@@ -206,7 +217,7 @@ calc_partition() {
     local target=$(( (disk + 3) / 4 ))
     # granularity: a quarter of the target
     local raw_step=$(( target / 4 ))
-    (( raw_step < 1 )) && raw_step=1
+    if (( raw_step < 1 )); then raw_step=1; fi
     # next power of two >= raw_step (bitwise round-up)
     local step=$(( raw_step - 1 ))
     (( step |= step >> 1 ))
@@ -222,8 +233,8 @@ calc_partition() {
 }
 if [ "$COUNT" -eq 1 ]; then
     HOST_MIB=$(calc_partition "$DISK_MIB")
-    [ "$HOST_MIB" -lt 16384 ]  && HOST_MIB=16384
-    [ "$HOST_MIB" -gt 262144 ] && HOST_MIB=262144
+    if [ "$HOST_MIB" -lt 16384 ]; then HOST_MIB=16384; fi
+    if [ "$HOST_MIB" -gt 262144 ]; then HOST_MIB=262144; fi
 else
     # R6  multi disk: the host disk is used 100% for host -- HOST = the
     # whole disk after EFI + /boot; the data lives on the OTHER disks,

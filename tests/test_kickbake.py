@@ -1,6 +1,7 @@
 """Unit tests for kickbake.py — stdlib unittest only, no podman needed."""
 
 import hashlib
+import json
 import sys
 import tempfile
 import unittest
@@ -193,6 +194,98 @@ class TestRequirePodman(unittest.TestCase):
         with mock.patch("kickbake.shutil.which",
                         return_value="/usr/bin/podman"):
             self.assertIsNone(kickbake.require_podman())
+
+
+class TestBuilderRecipe(unittest.TestCase):
+    """D-3: rebuild the toolchain image only when the Containerfile changes."""
+
+    @staticmethod
+    def _inspect(stdout, returncode=0):
+        return mock.Mock(returncode=returncode, stdout=stdout, stderr="")
+
+    def test_label_parsed_from_inspect(self):
+        out = json.dumps([{"Labels": {"kickbake.recipe": "abc123"}}])
+        with mock.patch("kickbake.subprocess.run",
+                        return_value=self._inspect(out)):
+            self.assertEqual(kickbake.image_recipe_label("img"), "abc123")
+
+    def test_missing_image_is_none(self):
+        with mock.patch("kickbake.subprocess.run",
+                        return_value=self._inspect("", returncode=1)):
+            self.assertIsNone(kickbake.image_recipe_label("img"))
+
+    def test_unlabelled_image_is_none(self):
+        out = json.dumps([{"Labels": {}}])
+        with mock.patch("kickbake.subprocess.run",
+                        return_value=self._inspect(out)):
+            self.assertIsNone(kickbake.image_recipe_label("img"))
+
+    def test_matching_recipe_skips_build(self):
+        cfg = {"fedora": {"builder_image": "img"}}
+        want = kickbake.builder_recipe_hash()
+        with mock.patch("kickbake.require_podman"), \
+             mock.patch("kickbake.image_recipe_label", return_value=want), \
+             mock.patch("kickbake.subprocess.run") as run:
+            kickbake.ensure_builder_image(cfg)
+            run.assert_not_called()
+
+    def test_stale_recipe_triggers_labelled_build(self):
+        cfg = {"fedora": {"builder_image": "img"}}
+        calls = []
+
+        def fake_run(cmd, *args, **kwargs):
+            calls.append(cmd)
+            return mock.Mock(returncode=0)
+
+        with mock.patch("kickbake.require_podman"), \
+             mock.patch("kickbake.image_recipe_label", return_value="old"), \
+             mock.patch("builtins.print"), \
+             mock.patch("kickbake.subprocess.run", side_effect=fake_run):
+            kickbake.ensure_builder_image(cfg)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("build", calls[0])
+        self.assertIn(
+            f"kickbake.recipe={kickbake.builder_recipe_hash()}", calls[0]
+        )
+
+
+class TestOfficialChecksum(unittest.TestCase):
+    """F-22: pin-iso --checksum parsing (bare sha256 or a Fedora CHECKSUM file)."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+
+    def test_bare_hash_is_lowercased(self):
+        h = hashlib.sha256(b"kickbake").hexdigest()
+        self.assertEqual(kickbake._official_checksum(h.upper(), "any.iso"), h)
+
+    def test_checksum_file_entry_is_found(self):
+        h = hashlib.sha256(b"iso").hexdigest()
+        ck = self.root / "CHECKSUM"
+        ck.write_text(
+            "# a comment line is ignored\n"
+            f"SHA256 (other.iso) = {'0' * 64}\n"
+            f"SHA256 (want.iso) = {h.upper()}\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(kickbake._official_checksum(str(ck), "want.iso"), h)
+
+    def test_checksum_file_without_the_name_raises(self):
+        ck = self.root / "CHECKSUM"
+        ck.write_text(f"SHA256 (other.iso) = {'0' * 64}\n", encoding="utf-8")
+        with self.assertRaises(kickbake.BuildError) as ctx:
+            kickbake._official_checksum(str(ck), "want.iso")
+        self.assertIn("no SHA256 entry", str(ctx.exception))
+
+    def test_unrecognised_value_raises(self):
+        with self.assertRaises(kickbake.BuildError):
+            kickbake._official_checksum("not-a-hash", "any.iso")
+
+    def test_wrong_length_hash_raises(self):
+        with self.assertRaises(kickbake.BuildError):
+            kickbake._official_checksum("abc123", "any.iso")
 
 
 if __name__ == "__main__":

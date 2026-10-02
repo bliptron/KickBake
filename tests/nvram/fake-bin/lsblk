@@ -1,0 +1,23 @@
+#!/bin/sh
+# Fake lsblk for KickBake's host-side NVRAM-hygiene tests (tests/nvram).
+# Only PARTUUID lookups are supported:
+#   lsblk -rno PARTUUID            -> every line of $KICKBAKE_FAKE_PARTUUIDS
+#   lsblk -rno PARTUUID /dev/xxx   -> the $KICKBAKE_FAKE_DEVMAP line for /dev/xxx
+# $KICKBAKE_FAKE_DEVMAP is TAB-separated: dev<TAB>partuuid.
+# No `set -e`: an empty file (no GPT disks) is a valid, tested case.
+
+dev=
+for arg in "$@"; do
+    case "$arg" in
+        /dev/*) dev=$arg ;;
+    esac
+done
+
+if [ -n "$dev" ]; then
+    [ -n "${KICKBAKE_FAKE_DEVMAP:-}" ] || exit 0
+    awk -F'	' -v d="$dev" '$1 == d { print $2 }' "$KICKBAKE_FAKE_DEVMAP"
+else
+    [ -n "${KICKBAKE_FAKE_PARTUUIDS:-}" ] || exit 0
+    cat "$KICKBAKE_FAKE_PARTUUIDS"
+fi
+exit 0

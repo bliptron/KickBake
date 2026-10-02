@@ -4,6 +4,70 @@ All notable changes to KickBake are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [1.0.2] - 2026-10-02
+
+### Added
+
+- Host-side NVRAM-hygiene test harness (`tests/nvram/`): fake
+  `efibootmgr`/`lsblk`/`findmnt` exercise the real `%post` logic with no
+  firmware, covering dangling, live and no-GPT entries.
+
+### Changed
+
+- **NVRAM hygiene now targets only dangling entries.** `%post` removes a
+  firmware boot entry only when the GPT partition it points at no longer
+  exists, and keeps every live entry -- including an OS on a disk KickBake did
+  not touch. The freshly installed entry is placed first in the boot order; the
+  other live entries are preserved. This replaces the previous pattern-match,
+  which cleared every entry named `Fedora Linux` or `Windows Boot Manager`, so
+  the documented "stale entries only" scope now matches the code.
+- The toolchain image is rebuilt whenever `podman/Containerfile` changes: the
+  build bakes a `kickbake.recipe` label carrying the recipe hash and
+  `ensure_builder_image` compares it, matching the README's claim.
+- README lists the hardcoded regional defaults (keyboard `gb`,
+  `en_GB.UTF-8`, `Europe/London`) among "The opinions".
+- `config/kickbake.toml`'s `repo_groups` now mirrors the kickstart `%packages`
+  order (plus `core`), with the deliberate differences documented in both.
+
+### Fixed
+
+- `%post` writes `/etc/default/grub` and `/etc/dnf/dnf.conf` keys through an
+  explicit `set_key` helper, so a key can never be duplicated (replaces the
+  `grep && sed || echo` idiom, whose failure path could append a second line).
+- `%post`'s `semanage fcontext` falls back to `-m` when the rule already exists
+  instead of swallowing every error.
+- `compose-offline.sh` drops the unused volume-id argument, and asserts the ESP
+  size after `mkfs.vfat` so a future dosfstools change cannot silently
+  truncate it.
+- Host-side Python quotes the config-derived paths spliced into `bash -c`
+  scripts, so a space or shell metacharacter in a value cannot break a command.
+- `select-disk.sh`: fixed a comment typo; the launcher and UI `die()` now emit
+  the same message and both mark the abort; the boot-medium list is
+  de-duplicated; and `TEST && VAR` one-liners became `if` blocks (safe if
+  `set -e` is ever added).
+- Comment and doc corrections: `config/build.toml` -> `config/kickbake.toml`,
+  `builder.py` -> `kickbake.py`, and internal `plans/...` references removed
+  from shipped files.
+
+## [1.0.1] - 2026-09-29
+
+Minor bug fixes and internal cleanup; the installed system is unchanged.
+
+### Changed
+
+- Output naming drops the Fedora netinst revision:
+  `fedora-plasma-44-kickbake-<YY.MM.DD>`. The Fedora release now comes from
+  the config, so the source ISO may be renamed freely. The unused
+  `menu_version` key is gone.
+
+### Fixed
+
+- Minor bug fixes: clearer failures when a path, a config file or podman is
+  missing; `ksvalidator` output is no longer silently dropped; a failed
+  build no longer leaves its multi-GB intermediate behind.
+
 ## [1.0.0] - 2026-09-23
 
 The first stable release: every machine, born the same way.
@@ -55,23 +119,6 @@ The first stable release: every machine, born the same way.
 - The installed GRUB menu is hidden (2s timeout; hold `Shift` to reveal),
   per the owner's tested configuration.
 
-## [1.0.1] - 2026-09-29
-
-Minor bug fixes and internal cleanup; the installed system is unchanged.
-
-### Changed
-
-- Output naming drops the Fedora netinst revision:
-  `fedora-plasma-44-kickbake-<YY.MM.DD>`. The Fedora release now comes from
-  the config, so the source ISO may be renamed freely. The unused
-  `menu_version` key is gone.
-
-### Fixed
-
-- Minor bug fixes: clearer failures when a path, a config file or podman is
-  missing; `ksvalidator` output is no longer silently dropped; a failed
-  build no longer leaves its multi-GB intermediate behind.
-
 ## Planned for 1.1.0
 
 - **`doctor` explains an end-of-life Fedora release.** When the configured
@@ -103,3 +150,8 @@ Minor bug fixes and internal cleanup; the installed system is unchanged.
   step, with a simplified argument set. Today pinning is manual: the ISO
   is passed by path, the official checksum via `--checksum`, and the
   Fedora release is edited by hand.
+
+[Unreleased]: https://github.com/bliptron/KickBake/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/bliptron/KickBake/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/bliptron/KickBake/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/bliptron/KickBake/releases/tag/v1.0.0

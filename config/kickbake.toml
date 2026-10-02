@@ -41,11 +41,15 @@ repo_dir = "cache/repo"
 #   user is ever created (root is locked) -- machine would be unloginnable.
 repo_extra_packages = "kernel grub2-efi-x64 shim-x64 efibootmgr grub2-tools-extra grub2-pc nvme-cli open-vm-tools initial-setup initial-setup-gui"
 # dnf environment/groups whose closure fills the offline repo: the exact
-# Fedora KDE Plasma Workspaces environment plus its member groups,
-# mirroring the %packages list in kickstart/kickbake.ks 1:1 (Anaconda also
-# always adds @core). The repo self-verification resolves this exact spec
-# against the repo alone, so a missing member can never reach a VM again.
-repo_groups = "kde-desktop-environment core admin-tools desktop-accessibility kde-apps kde-desktop kde-media kde-pim libreoffice"
+# Fedora KDE Plasma Workspaces environment plus its member groups, in the
+# SAME ORDER as the %packages list in kickstart/kickbake.ks (spelled there
+# as @^kde-desktop-environment / @admin-tools / ...). `core` sits last
+# because Anaconda always adds @core on top of the kickstart list and the
+# repo self-verification must resolve that same spec, so core belongs here
+# even though %packages omits it. efibootmgr appears in the kickstart list
+# AND in repo_extra_packages above, by design. Change one list and you must
+# change the other; a missing member can then never reach a VM again.
+repo_groups = "kde-desktop-environment admin-tools desktop-accessibility kde-apps kde-desktop kde-media kde-pim libreoffice core"
 
 # mkksiso's own ESP rebuild (mkefiboot) needs loop devices, which rootless
 # podman cannot provide. Keep it skipped: podman/compose-offline.sh then

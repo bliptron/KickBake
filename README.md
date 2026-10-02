@@ -23,6 +23,7 @@ KickBake is strongly opinionated. These are features, not limitations to be fixe
 - **Root is locked. No user is pre-created.** Fedora's initial setup collects the admin user at first boot. Machine birth does not include accounts.
 - **Boot safety is real.** The installed system boots from a safe-default GRUB; the installer entry is password-protected; the media announces its build date (`KickBake 26.09.22`) at the boot menu so stale media is immediately obvious; stale firmware boot entries from previous installs are cleaned at install time. The installed boot menu is hidden with a 2-second timeout — hold `Shift` during boot to reveal it.
 - **Visible progress, no secrets.** The install proceeds unattended with normal Anaconda progress once the disk is confirmed.
+- **The owner's regional defaults.** Keyboard `gb`, language `en_GB.UTF-8` and timezone `Europe/London` are hardcoded. They are opinions, not settings; changing them is a deliberate fork of the tool.
 
 ---
 

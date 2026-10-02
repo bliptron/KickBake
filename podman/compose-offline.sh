@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Rootless compose of the offline kickstart ISO (runs INSIDE the
-# kickbake-builder container; invoked by builder.py).
+# kickbake-builder container; invoked by kickbake.py).
 #
-#   compose-offline.sh <stage.iso> <final.iso> <volid> [grub_password]
+#   compose-offline.sh <stage.iso> <final.iso> [grub_password]
 #
 # stage.iso : output of `mkksiso --skip-mkefiboot ...` -- kickstart and the
 #             offline repo are already grafted, tree grub.cfg files already
@@ -12,12 +12,11 @@
 #             (mkksiso would do this with mkefiboot, which needs loop
 #             devices -- impossible under rootless podman. We replicate it
 #             with mkfs.vfat -C + mcopy, which need no loop devices.)
-# volid     : the ISO volume id (informational; used for a sanity grep).
 # grub_password : typed confirmation required to boot the INSTALL entry
 #                 (GRUB superusers/password_pbkdf2). Default: kickbake.
 set -euo pipefail
 
-STAGE="$1"; FINAL="$2"; VOLID="$3"; GRUB_PW="${4:-kickbake}"
+STAGE="$1"; FINAL="$2"; GRUB_PW="${3:-kickbake}"
 
 test -f "$STAGE"
 rm -f "$FINAL"
@@ -103,6 +102,11 @@ ESP="$W/efiboot.img"
 # 4.2). 40 * 1024 = 40 MiB -- matches mkefiboot's sizing with headroom
 # (the original hidden ESP is ~13 MB).
 mkfs.vfat -C -n ANACONDA "$ESP" $((40 * 1024)) >/dev/null
+# Hard post-condition: the image must be a full 40 MiB. If a future
+# dosfstools changed the -C block size the file would be smaller, and the
+# verifier's `dd ... bs=2048 count=20480` (kickbake.py) would silently
+# truncate. Fail loudly here instead.
+test "$(stat -c %s "$ESP")" -ge $((40 * 1024 * 1024))
 mcopy -s -Q -i "$ESP" "$W/EFI" ::
 
 # 3. Re-embed as GPT partition 2 -- the same xorriso mechanism mkksiso

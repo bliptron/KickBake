@@ -1,0 +1,6 @@
+#!/bin/sh
+# Fake findmnt for KickBake's host-side NVRAM-hygiene tests (tests/nvram).
+# Always reports the /boot/efi source device from $KICKBAKE_FAKE_ESPDEV
+# (empty when unset, which models "no ESP resolvable").
+printf '%s\n' "${KICKBAKE_FAKE_ESPDEV:-}"
+exit 0

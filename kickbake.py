@@ -27,8 +27,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -41,7 +43,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - reported by doctor
     tomllib = None
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_CONFIG = ROOT / "config" / "kickbake.toml"
@@ -261,17 +263,41 @@ def podman_run(cfg: dict, container_args: list[str],
                           capture_output=True, text=True)
 
 
+def builder_recipe_hash() -> str:
+    """Fingerprint of the toolchain recipe, so the image is rebuilt only
+    when podman/Containerfile actually changes."""
+    return sha256_file(ROOT / "podman" / "Containerfile")
+
+
+def image_recipe_label(image: str) -> str | None:
+    """The `kickbake.recipe` label baked into `image`, or None when the
+    image is absent or unattributed (such an image is treated as stale)."""
+    proc = subprocess.run(
+        ["podman", "image", "inspect", image], capture_output=True, text=True
+    )
+    if proc.returncode != 0:
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except ValueError:
+        return None
+    if not isinstance(data, list) or not data:
+        return None
+    labels = data[0].get("Labels") or {}
+    return labels.get("kickbake.recipe") or None
+
+
 def ensure_builder_image(cfg: dict, rebuild: bool = False) -> None:
     require_podman()
     image = cfg["fedora"]["builder_image"]
-    exists = subprocess.run(
-        ["podman", "image", "exists", image], capture_output=True
-    ).returncode == 0
-    if exists and not rebuild:
+    want = builder_recipe_hash()
+    if not rebuild and image_recipe_label(image) == want:
         return
-    print(f"[image] building toolchain image {image} (first run only)...")
+    print(f"[image] building toolchain image {image} "
+          f"(recipe {want[:12]})...")
     proc = subprocess.run(
-        ["podman", "build", "-t", image, str(ROOT / "podman")]
+        ["podman", "build", "--label", f"kickbake.recipe={want}",
+         "-t", image, str(ROOT / "podman")]
     )
     if proc.returncode != 0:
         raise BuildError(f"podman build failed for {image}")
@@ -341,7 +367,8 @@ def do_validate(cfg: dict, flat: Path) -> None:
     print(f"[validate] ksvalidator -v {version} {rel}")
     # Runtime includes (%pre-generated) only exist on the install machine;
     # strip them before validating the rest of the file.
-    script = ("sed '/^%include \\/tmp\\//d' /work/" + str(rel)
+    work_flat = shlex.quote(f"/work/{rel}")
+    script = ("sed '/^%include \\/tmp\\//d' " + work_flat
               + " > /tmp/vflat.ks && ksvalidator -v " + version
               + " /tmp/vflat.ks")
     proc = podman_run(cfg, ["bash", "-c", script])
@@ -455,9 +482,10 @@ def cmd_pin_iso(cfg: dict, args: argparse.Namespace) -> int:
 def read_volid(cfg: dict, iso: Path) -> str:
     """Read the ISO's volume id via xorriso in the container."""
     rel = iso.relative_to(ROOT)
+    work_iso = shlex.quote(f"/work/{rel}")
     proc = podman_run(cfg, [
         "bash", "-c",
-        "xorriso -indev /work/" + str(rel) + " 2>&1 | "
+        "xorriso -indev " + work_iso + " 2>&1 | "
         "sed -n \"s/^Volume id *: '\\(.*\\)'$/\\1/p\"",
     ])
     volid = proc.stdout.strip()
@@ -490,6 +518,9 @@ def do_mkksiso(cfg: dict, flat: Path, out: Path, stage: Path,
     # the title. `stamp` is computed once by cmd_build so the title, the
     # output filename and the output verification cannot straddle midnight.
     rel = cfg["fedora"]["release"]
+    # -R FROM TO rewrites the menu title in the boot configs (two-arg form
+    # confirmed against lorax 44.7-1.fc44; recheck `mkksiso --help` on each
+    # Fedora rebase). The verification gates assert this title survived.
     cmd += ["-R", f"Install Fedora {rel}",
             f"Install Fedora {rel} - KickBake {stamp}"]
     if cfg.get("build", {}).get("skip_mkefiboot", False):
@@ -509,8 +540,7 @@ def do_mkksiso(cfg: dict, flat: Path, out: Path, stage: Path,
     return stage
 
 
-def do_compose_offline(cfg: dict, stage: Path, out: Path,
-                       volid: str) -> Path:
+def do_compose_offline(cfg: dict, stage: Path, out: Path) -> Path:
     """Rebuild the embedded ESP rootlessly (mkfs.vfat -C + mcopy +
     xorriso append_partition) so UEFI boots see the kickstart args."""
     if out.exists():
@@ -520,7 +550,6 @@ def do_compose_offline(cfg: dict, stage: Path, out: Path,
         "bash", "/work/podman/compose-offline.sh",
         f"/work/{stage.relative_to(ROOT)}",
         f"/work/{out.relative_to(ROOT)}",
-        volid,
         grub_pw,
     ])
     if proc.returncode != 0:
@@ -543,6 +572,10 @@ def do_build_repo(cfg: dict) -> None:
     then self-verified by resolving the group against ONLY this repo."""
     repo = repo_path(cfg["build"].get("repo_dir", "cache/repo"))
     rel = repo.relative_to(ROOT)
+    # Shell-safe paths for the `bash -c` script below: repo_dir and
+    # everything_base come from config, so a stray space or shell
+    # metacharacter in a value must not split or inject a command.
+    repo_sh = shlex.quote(f"/work/{rel}")
     # Anaconda resolves the environment AND unconditionally adds @core
     # (LOG-FINDINGS: "No match for group package: audit/dnf5/..."), so the
     # closure and the self-verification must both cover the same spec.
@@ -554,16 +587,17 @@ def do_build_repo(cfg: dict) -> None:
         "https://dl.fedoraproject.org/pub/fedora/linux/releases/"
         f"{release}/Everything/x86_64/os",
     )
+    base_sh = shlex.quote(base)
     script = "\n".join([
         "set -e",
-        f"if [ -e /work/{rel}/.done ]; then echo '[repo] already built'; exit 0; fi",
-        f"mkdir -p /work/{rel}/Packages /work/cache/dnf-cache",
+        f"if [ -e {repo_sh}/.done ]; then echo '[repo] already built'; exit 0; fi",
+        f"mkdir -p {repo_sh}/Packages /work/cache/dnf-cache",
         "# 1. official Fedora comps (group + environment definitions)",
-        f"curl -fsSL {base}/repodata/repomd.xml -o /tmp/repomd.xml",
+        f"curl -fsSL {base_sh}/repodata/repomd.xml -o /tmp/repomd.xml",
         "COMPS=$(grep -o 'href=\"repodata/[^\"]*comps[^\"]*\"' /tmp/repomd.xml "
         "| head -1 | cut -d'\"' -f2)",
         "test -n \"$COMPS\"",
-        f"curl -fsSL {base}/$COMPS -o /tmp/comps.comp",
+        f"curl -fsSL {base_sh}/$COMPS -o /tmp/comps.comp",
         "case \"$COMPS\" in"
         " *.gz) gunzip -c /tmp/comps.comp > /tmp/comps.xml ;;"
         " *.zst) zstd -dc /tmp/comps.comp > /tmp/comps.xml ;;"
@@ -578,12 +612,12 @@ def do_build_repo(cfg: dict) -> None:
         "--installroot=/tmp/void --setopt=cachedir=/work/cache/dnf-cache "
         f"install {extras} --downloadonly",
         f"find /work/cache/dnf-cache -name '*.rpm' -exec mv {{}} "
-        f"/work/{rel}/Packages/ \\;",
+        f"{repo_sh}/Packages/ \\;",
         "# 2b. prune superseded versions: keep only the newest rpm per name",
         "# ${stem%-*-*} assumes NEVRA name-[epoch:]version-release, so an",
         "# epoch (name-1:1.2-3) would stay in the key and two rpms could look",
         "# like different names. Harmless today; revisit if epochs become common.",
-        f"cd /work/{rel}/Packages",
+        f"cd {repo_sh}/Packages",
         "declare -A newest=()",
         "for f in *.rpm; do",
         "    [ -e \"$f\" ] || continue",
@@ -598,19 +632,19 @@ def do_build_repo(cfg: dict) -> None:
         "done",
         "cd /work",
         "# Anaconda requires the kernel package itself (F41+: not in comps)",
-        f"test -n \"$(ls /work/{rel}/Packages/kernel-[0-9]*.rpm 2>/dev/null)\"",
+        f"test -n \"$(ls {repo_sh}/Packages/kernel-[0-9]*.rpm 2>/dev/null)\"",
         "# 3. metadata WITH comps",
         "dnf -q -y install createrepo_c >/dev/null 2>&1",
-        f"createrepo_c --groupfile=/tmp/comps.xml /work/{rel}",
+        f"createrepo_c --groupfile=/tmp/comps.xml {repo_sh}",
         "# 4. self-verify: resolve the group against ONLY this repo",
         # Both verify passes reuse the persistent /work cache; only the
         # installroots must exist. (/tmp/verify-cache was never referenced.)
         f"mkdir -p /tmp/verify /tmp/verify2",
-        f"dnf -y -q --disablerepo='*' --repofrompath=kb,/work/{rel} "
+        f"dnf -y -q --disablerepo='*' --repofrompath=kb,{repo_sh} "
         f"--releasever={release} --installroot=/tmp/verify "
         f"--setopt=cachedir=/work/cache/dnf-cache group install {groups} "
         "--downloadonly",
-        f"dnf -y -q --disablerepo='*' --repofrompath=kb,/work/{rel} "
+        f"dnf -y -q --disablerepo='*' --repofrompath=kb,{repo_sh} "
         f"--releasever={release} --installroot=/tmp/verify2 "
         f"--setopt=cachedir=/work/cache/dnf-cache install {extras} "
         "--downloadonly",
@@ -618,9 +652,9 @@ def do_build_repo(cfg: dict) -> None:
         # of the cache, so these passes repopulate it from the local repo
         # (fast, no network) -- this check proves they actually resolved.
         "test -n \"$(find /work/cache/dnf-cache -name '*.rpm' | head -1)\"",
-        f"touch /work/{rel}/.done",
+        f"touch {repo_sh}/.done",
         f"echo \"[repo] ready + comps + self-verified: "
-        f"$(ls /work/{rel}/Packages | wc -l) packages\"",
+        f"$(ls {repo_sh}/Packages | wc -l) packages\"",
     ])
     # Stream: the dnf download meters and every step boundary render live
     # (this is the longest step of the build -- silent is unacceptable).
@@ -640,7 +674,7 @@ def do_verify_output(cfg: dict, out: Path, volid: str, ks: Path,
     test) and carry the KickBake <date> title."""
     rel = out.relative_to(ROOT)
     script = (
-        "V=/work/" + str(rel) + "; "
+        "V=" + shlex.quote(f"/work/{rel}") + "; "
         "xorriso -osirrox on -indev $V -extract /boot/grub2/grub.cfg "
         "/tmp/menu.cfg >/dev/null 2>&1 && "
         "grep -q 'requires UEFI' /tmp/menu.cfg && echo TREE_HALT_OK; "
@@ -665,8 +699,8 @@ def do_verify_output(cfg: dict, out: Path, volid: str, ks: Path,
         "| grep -q repomd && echo REPO_OK; "
         "xorriso -indev $V -find /repo/repodata -name '*comps*' 2>/dev/null "
         "| grep -q comps && echo COMPS_OK; "
-        "xorriso -indev $V -find /" + ks.name + " 2>/dev/null "
-        "| grep -q " + ks.name + " && echo KS_OK; "
+        "xorriso -indev $V -find " + shlex.quote("/" + ks.name) + " 2>/dev/null "
+        "| grep -q " + shlex.quote(ks.name) + " && echo KS_OK; "
         "xorriso -indev $V 2>&1 | grep -q 'El Torito' && echo ELTORITO_OK"
     )
     proc = podman_run(cfg, ["bash", "-c", script])
@@ -815,7 +849,7 @@ def cmd_build(cfg: dict, args: argparse.Namespace) -> int:
     stage = out.with_name(out.stem + ".stage.iso")
     try:
         stage = do_mkksiso(cfg, flat, out, stage, volid, stamp)
-        out = do_compose_offline(cfg, stage, out, volid)
+        out = do_compose_offline(cfg, stage, out)
         do_verify_output(cfg, out, volid, flat, stamp)
     finally:
         # Reclaim the multi-GB intermediate on success AND on failure: a

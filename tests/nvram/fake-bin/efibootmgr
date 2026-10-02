@@ -1,0 +1,68 @@
+#!/bin/sh
+# Fake efibootmgr for KickBake's host-side NVRAM-hygiene tests (tests/nvram).
+# No real firmware is read or written. State lives in two flat files:
+#   $KICKBAKE_FAKE_STATE : one entry per line, TAB-separated
+#                          id<TAB>description<TAB>device-path
+#   $KICKBAKE_FAKE_ORDER : comma-separated hex ids, in boot order
+# Supported invocations (the subset kickbake_nvram_hygiene uses):
+#   (none)            -> summary list + "BootOrder: ..."
+#   -v                -> verbose list (id* desc<TAB>path) + "BootOrder: ..."
+#   -b <id> -B        -> delete entry <id> (hex "0001" or "Boot0001")
+#   -o <list>         -> set the boot order
+# Deliberately no `set -e`: several pipelines legitimately match nothing.
+
+state=${KICKBAKE_FAKE_STATE:?KICKBAKE_FAKE_STATE not set}
+order=${KICKBAKE_FAKE_ORDER:?KICKBAKE_FAKE_ORDER not set}
+
+action=list
+id=
+neworder=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -v|--verbose)        action=verbose ;;
+        -B|--delete-bootnum) action=delete ;;
+        -o|--bootorder)      action=order; neworder=$2; shift ;;
+        -b|--bootnum)        id=$2; shift ;;
+    esac
+    shift
+done
+
+strip() { printf '%s' "$1" | sed 's/^[Bb][Oo][Oo][Tt]//'; }
+
+emit_list() {
+    while IFS='	' read -r eid edesc epath; do
+        [ -n "$eid" ] || continue
+        if [ "$1" = verbose ]; then
+            printf '%s* %s\t%s\n' "$eid" "$edesc" "$epath"
+        else
+            printf '%s* %s\n' "$eid" "$edesc"
+        fi
+    done < "$state"
+    printf 'BootOrder: %s\n' "$(cat "$order" 2>/dev/null)"
+}
+
+case "$action" in
+    delete)
+        hex=$(strip "$id")
+        : > "$state.new"
+        while IFS='	' read -r eid edesc epath; do
+            [ -n "$eid" ] || continue
+            [ "$(strip "$eid")" = "$hex" ] && continue
+            printf '%s\t%s\t%s\n' "$eid" "$edesc" "$epath" >> "$state.new"
+        done < "$state"
+        mv "$state.new" "$state"
+        tr ',' '\n' < "$order" 2>/dev/null | grep -v "^0*${hex}$" \
+            | tr '\n' ',' | sed 's/,$//' > "$order.new"
+        mv "$order.new" "$order"
+        ;;
+    order)
+        printf '%s\n' "$neworder" > "$order"
+        ;;
+    verbose)
+        emit_list verbose
+        ;;
+    *)
+        emit_list list
+        ;;
+esac
+exit 0
